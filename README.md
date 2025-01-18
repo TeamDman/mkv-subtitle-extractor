@@ -18,10 +18,15 @@ https://github.com/user-attachments/assets/a8f4664a-61d7-43f8-84f0-df3a7075c2b8
 
 ### Prerequisites
 
-- **Rust**: Ensure you have Rust installed. If not, install it from [rustup.rs](https://rustup.rs/).
 - **FFmpeg**: The tool relies on `ffmpeg` being installed and accessible in your system's PATH. Download it from [ffmpeg.org](https://ffmpeg.org/download.html).
 
+### Pre-Built Binaries
+
+Check out the [releases](https://github.com/TeamDman/mkv-subtitle-extractor/releases)
+
 ### Building from Source
+
+- **Rust**: Ensure you have Rust installed. If not, install it from [rustup.rs](https://rustup.rs/).
 
 1. **Clone the Repository:**
    ```bash
