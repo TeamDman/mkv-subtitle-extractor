@@ -1,12 +1,19 @@
 #![feature(try_blocks)]
 use clap::Parser;
-use cloud_terrastodon_core_user_input::prelude::{pick, pick_many, Choice, FzfArgs};
-use eyre::{bail, eyre, Context};
+use cloud_terrastodon_core_user_input::prelude::pick;
+use cloud_terrastodon_core_user_input::prelude::pick_many;
+use cloud_terrastodon_core_user_input::prelude::Choice;
+use cloud_terrastodon_core_user_input::prelude::FzfArgs;
+use eyre::bail;
+use eyre::eyre;
+use eyre::Context;
 use itertools::Itertools;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{debug, info, level_filters::LevelFilter};
+use tracing::debug;
+use tracing::info;
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
 /// Command-line arguments
@@ -220,7 +227,9 @@ async fn enumerate_subtitle_tracks(path: &PathBuf) -> eyre::Result<Vec<SubtitleT
                 // e.g. "0:2(eng): Subtitle: subrip (default)"
 
                 // 2) get up to first colon => "0:2(eng)"
-                let Some(colon_pos) = after_stream.find(':') else { continue; };
+                let Some(colon_pos) = after_stream.find(':') else {
+                    continue;
+                };
                 let (stream_portion, after_colon) = after_stream.split_at(colon_pos);
                 // after_colon starts with ":", so skip that
                 let after_colon = &after_colon[1..].trim();
@@ -233,7 +242,10 @@ async fn enumerate_subtitle_tracks(path: &PathBuf) -> eyre::Result<Vec<SubtitleT
                 if let Some(par_open) = stream_portion.find('(') {
                     // e.g. "0:2(eng)"
                     let after_paren = &stream_portion[par_open + 1..]; // "eng)"
-                    let Some(cl_par) = after_paren.find(')') else { /* no close paren? */ continue; };
+                    let Some(cl_par) = after_paren.find(')') else {
+                        /* no close paren? */
+                        continue;
+                    };
                     let inside = &after_paren[..cl_par]; // "eng"
                     lang = Some(inside.to_string());
 
@@ -259,7 +271,9 @@ async fn enumerate_subtitle_tracks(path: &PathBuf) -> eyre::Result<Vec<SubtitleT
 
                 // parse the "Subtitle: ???" portion from after_colon
                 // e.g. "Subtitle: subrip (default)" or "Subtitle: hdmv_pgs_subtitle, 1920x1080"
-                let Some(subtitle_pos) = after_colon.find("Subtitle:") else { continue; };
+                let Some(subtitle_pos) = after_colon.find("Subtitle:") else {
+                    continue;
+                };
                 let after_subtitle = after_colon[subtitle_pos + "Subtitle:".len()..].trim();
                 // e.g. "subrip (default)" or "hdmv_pgs_subtitle, 1920x1080"
                 // We'll take the first token for the format: "subrip", "ass", "hdmv_pgs_subtitle"
@@ -452,10 +466,12 @@ async fn extract_subtitle_track(
 fn sanitize_to_windows_path_characters(segment: &str) -> String {
     segment
         .chars()
-        .map(|c| if ['/', '\\', ':', '*', '"', '<', '>', '|'].contains(&c) {
-            '_'
-        } else {
-            c
+        .map(|c| {
+            if ['/', '\\', ':', '*', '"', '<', '>', '|'].contains(&c) {
+                '_'
+            } else {
+                c
+            }
         })
         .collect()
 }
