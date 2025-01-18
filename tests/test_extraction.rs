@@ -28,6 +28,10 @@ async fn test_extract_subtitles_and_compare() -> Result<()> {
         .find(|t| t.format == "ass")
         .ok_or_else(|| eyre::eyre!("No ass track found"))?;
 
+    // Remove old files
+    let _ = tokio::fs::remove_file("resources/output_with_subs.0.srt").await;
+    let _ = tokio::fs::remove_file("resources/output_with_subs.1.ass").await;
+
     // 4) Extract the subrip track
     let extracted_srt = extract_subtitle_track(&mkv_path, subrip_track)
         .await?
@@ -49,18 +53,25 @@ async fn test_extract_subtitles_and_compare() -> Result<()> {
     compare_files_text(&extracted_srt, &PathBuf::from(reference_srt))?;
     compare_files_text(&extracted_ass, &PathBuf::from(reference_ass))?;
 
+    
+    // Remove old files
+    tokio::fs::remove_file("resources/output_with_subs.0.srt").await?;
+    tokio::fs::remove_file("resources/output_with_subs.1.ass").await?;
+
     Ok(())
 }
 
 /// Simple helper to compare two files line by line.
 /// Panics if they differ, with a clear message.
 fn compare_files_text<P: AsRef<Path>>(path_a: P, path_b: P) -> Result<()> {
-    let text_a = fs::read_to_string(&path_a)?;
-    let text_b = fs::read_to_string(&path_b)?;
+    let text_a = fs::read_to_string(&path_a)?.replace("\r","");
+    let text_a = text_a.trim();
+    let text_b = fs::read_to_string(&path_b)?.replace("\r","");
+    let text_b = text_b.trim();
 
     if text_a != text_b {
         eyre::bail!(
-            "Files differ:\n  A = {}\n  B = {}\n---\nFile A:\n{}\n---\nFile B:\n{}",
+            "Files differ:\n  A = {}\n  B = {}\n---\nFile A:\n```\n{}\n```\n---\nFile B:\n```\n{}\n```",
             path_a.as_ref().display(),
             path_b.as_ref().display(),
             text_a,

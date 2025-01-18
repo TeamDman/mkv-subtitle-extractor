@@ -150,60 +150,72 @@ pub async fn enumerate_subtitle_tracks(path: &Path) -> eyre::Result<Vec<Subtitle
 
     // Iterate over each line to find subtitle streams
     for line in lines.iter() {
-        // Check if the line contains a subtitle stream
         if line.trim_start().starts_with("Stream #") && line.contains("Subtitle") {
             // Finalize the previous track if it exists
             if let Some(t) = current.take() {
                 result.push(t);
             }
 
-            // Parse the subtitle stream line
-            // Example:
-            // Stream #0:2(eng): Subtitle: subrip (default)
-            // Stream #0:3: Subtitle: hdmv_pgs_subtitle, 1920x1080
+            // Example line:
+            //   "Stream #0:1: Subtitle: subrip (default)"
+            //   "Stream #0:2(eng): Subtitle: subrip (default)"
+            //   "Stream #0:3: Subtitle: hdmv_pgs_subtitle, 1920x1080"
+            //   "Stream #0:0: Subtitle: subrip (default)"
+
             let line_trim = line.trim_start();
-            let after_stream = &line_trim["Stream #".len()..];
+            // Remove "Stream #"
+            let after_stream = &line_trim["Stream #".len()..].trim();
 
-            // Split at the first colon to separate stream info and stream details
-            let colon_pos = after_stream
-                .find(':')
-                .ok_or_else(|| eyre!("Invalid stream line: {}", line))?;
-            let (stream_portion, after_colon) = after_stream.split_at(colon_pos);
-            let after_colon = after_colon[1..].trim(); // Remove the colon
-
-            // Extract stream index and language (if any)
-            let (numeric_part, lang) = if let Some(par_open) = stream_portion.find('(') {
-                let after_paren = &stream_portion[par_open + 1..];
-                let cl_par = after_paren
-                    .find(')')
-                    .ok_or_else(|| eyre!("Unclosed parenthesis in stream line: {}", line))?;
-                let inside = &after_paren[..cl_par];
-                let lang = Some(inside.to_string());
-
-                // Extract the numeric part before the parenthesis
-                let numeric_str = &stream_portion[..par_open];
-                let colon_idx = numeric_str
-                    .rfind(':')
-                    .ok_or_else(|| eyre!("No colon found in stream portion: {}", numeric_str))?;
-                let maybe_num = &numeric_str[colon_idx + 1..];
-                let num = maybe_num.parse::<u32>()?;
-                (Some(num), lang)
-            } else {
-                // No language specified
-                let colon_idx = stream_portion
-                    .rfind(':')
-                    .ok_or_else(|| eyre!("No colon found in stream portion: {}", stream_portion))?;
-                let maybe_num = &stream_portion[colon_idx + 1..];
-                let num = maybe_num.parse::<u32>()?;
-                (Some(num), None)
+            // We expect "0:1:" or "0:2(eng):" etc. before the words "Subtitle:"
+            // Split by "Subtitle:"
+            let (mut stream_part, after_subtitle) = match after_stream.split_once("Subtitle:") {
+                Some((left, right)) => (left.trim(), right.trim()),
+                None => {
+                    // Shouldn’t happen if line.contains("Subtitle"), but just in case:
+                    return Err(eyre!("No 'Subtitle:' in line: {}", line));
+                }
             };
 
-            // Extract the subtitle format
-            // Example after_colon: "Subtitle: subrip (default)"
-            let subtitle_pos = after_colon
-                .find("Subtitle:")
-                .ok_or_else(|| eyre!("No 'Subtitle:' found in stream details: {}", after_colon))?;
-            let after_subtitle = after_colon[subtitle_pos + "Subtitle:".len()..].trim();
+            // stream_part might be "0:1:" or "0:1(eng):" or "0:2(eng):"
+            // remove trailing colons
+            stream_part = stream_part.trim_end_matches(':').trim();
+
+            // Extract optional (lang). We'll do:
+            //   - If we find '(' => parse everything up to '(' as e.g. "0:1"
+            //   - Then parse what's inside '(...)' as the language
+            let (numeric_part, lang) = if let Some(open_paren) = stream_part.find('(') {
+                // e.g. "0:2(eng)"
+                let inside = &stream_part[open_paren + 1..]; // "eng)"
+                let close_paren = inside
+                    .find(')')
+                    .ok_or_else(|| eyre!("Unclosed parenthesis in line: {}", line))?;
+                let lang_str = Some(inside[..close_paren].to_string());
+
+                // numeric_str is everything up to '('
+                let numeric_str = stream_part[..open_paren].trim_end_matches(':').trim();
+                // e.g. "0:2" or "0:1"
+                let idx = numeric_str
+                    .rfind(':')
+                    .ok_or_else(|| eyre!("No colon found in numeric_str: '{}'", numeric_str))?;
+                let int_str = &numeric_str[idx + 1..];
+                let num = int_str.parse::<u32>()?;
+                (num, lang_str)
+            } else {
+                // No parentheses => no language
+                // e.g. "0:1" or "0:2"
+                let trimmed = stream_part.trim_end_matches(':').trim();
+                // If there's still a trailing colon, remove it again
+                let idx = trimmed
+                    .rfind(':')
+                    .ok_or_else(|| eyre!("No colon found in stream portion: '{}'", trimmed))?;
+                let int_str = &trimmed[idx + 1..];
+                let num = int_str.parse::<u32>()?;
+                (num, None)
+            };
+
+            // Now parse the format from after_subtitle
+            // e.g. "subrip (default)" => "subrip"
+            //      "hdmv_pgs_subtitle, 1920x1080" => "hdmv_pgs_subtitle"
             let format_str = after_subtitle
                 .split(|c: char| c.is_whitespace() || c == ',' || c == '(')
                 .next()
@@ -211,19 +223,19 @@ pub async fn enumerate_subtitle_tracks(path: &Path) -> eyre::Result<Vec<Subtitle
                 .trim()
                 .to_string();
 
-            // Initialize a new SubtitleTrack
             let track = SubtitleTrack {
-                stream_index: numeric_part.unwrap_or(0),
+                stream_index: numeric_part,
                 lang,
                 format: format_str,
                 title: None,
             };
+
             current = Some(track);
         } else {
-            // Check for metadata lines related to the current subtitle track
+            // Possibly a metadata line if `current` is Some
             if let Some(current_track) = current.as_mut() {
                 if line.trim_start().starts_with("title") {
-                    // Example: title           : English subs
+                    // e.g. "title           : English subs"
                     if let Some(colon_pos) = line.find(':') {
                         let after_colon = &line[colon_pos + 1..].trim();
                         if !after_colon.is_empty() {
@@ -238,6 +250,11 @@ pub async fn enumerate_subtitle_tracks(path: &Path) -> eyre::Result<Vec<Subtitle
     // Finalize the last track if it exists
     if let Some(t) = current.take() {
         result.push(t);
+    }
+
+    // Update the indices to be 0-based
+    for (i, track) in result.iter_mut().enumerate() {
+        track.stream_index = i as u32;
     }
 
     Ok(result)
@@ -329,26 +346,35 @@ pub async fn extract_subtitle_track(
     // Example: ffmpeg -i input.mkv -map 0:s:2 -c copy output.srt
     let mut cmd = Command::new("ffmpeg");
     cmd.current_dir(path.parent().unwrap_or_else(|| Path::new(".")));
+
     let selector = format!("0:s:{}", track.stream_index);
-    let args = [
-        "-i".as_ref(),
-        path.file_name()
-            .ok_or_else(|| eyre!("No file name on input path"))?,
-        "-map".as_ref(),
-        selector.as_ref(),
-        "-c".as_ref(),
-        "copy".as_ref(),
+
+    cmd.args([
+        "-i",
+        path.file_name().ok_or(eyre!("No file name"))?.to_string_lossy().as_ref(),
+        "-map",
+        &selector,
+        "-c",
+        "copy",
+    ]);
+
+    // Decide container format for text-based subtitles
+    let container_format = match track.format.as_str() {
+        "subrip" => "srt",
+        "ass" => "ass",
+        "hdmv_pgs_subtitle" | "pgssub" => "sup",
+        _ => "",
+    };
+
+    if !container_format.is_empty() {
+        cmd.arg("-f").arg(container_format);
+    }
+
+    // Finally, specify the output file (temp_path)
+    cmd.arg(
         temp_path
             .file_name()
-            .ok_or_else(|| eyre!("No file name on output path"))?,
-    ];
-    cmd.args(args);
-    debug!(
-        "Running command `ffmpeg {}`",
-        args.iter()
-            .map(|s| s.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ")
+            .ok_or(eyre!("No file name on output"))?,
     );
 
     // Execute the command and handle errors
