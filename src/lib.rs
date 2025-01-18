@@ -267,6 +267,15 @@ pub async fn extract_subtitle_track(
 ) -> eyre::Result<Option<PathBuf>> {
     info!("Extracting subtitle track: {}", track);
 
+    // prepend with . if not present
+    let path = if path.starts_with(".") {
+        path.to_path_buf()
+    } else {
+        PathBuf::from(format!("./{}", path.display()))
+    };
+
+    debug!("Path: {}", path.display());
+
     // Determine the file extension based on subtitle format
     let ext = extension_for_format(&track.format);
 
@@ -345,10 +354,11 @@ pub async fn extract_subtitle_track(
     // Build and run the ffmpeg command
     // Example: ffmpeg -i input.mkv -map 0:s:2 -c copy output.srt
     let mut cmd = Command::new("ffmpeg");
-    cmd.current_dir(path.parent().unwrap_or_else(|| Path::new(".")));
+    if let Some(parent) = path.parent() {
+        cmd.current_dir(parent);
+    }
 
     let selector = format!("0:s:{}", track.stream_index);
-
     cmd.args([
         "-i",
         path.file_name().ok_or(eyre!("No file name"))?.to_string_lossy().as_ref(),
