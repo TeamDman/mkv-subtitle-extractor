@@ -2,6 +2,8 @@
 
 **MKV Subtitle Extractor** is a command-line tool written in Rust that allows users to extract subtitle tracks from MKV (Matroska) video files. Leveraging `ffmpeg` for processing, this utility provides an interactive selection interface using FZF, enabling users to choose specific subtitle tracks and export them in their respective formats.
 
+![command line demo](./demo.mp4)
+
 ## 📦 Features
 
 - **Interactive Selection**: Use FZF-based prompts to select MKV files and choose one or multiple subtitle tracks for extraction.
